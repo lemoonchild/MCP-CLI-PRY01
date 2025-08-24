@@ -1,0 +1,2 @@
+# MCP-CLI-PRY01
+CLI for MCP 
