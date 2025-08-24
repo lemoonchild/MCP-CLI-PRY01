@@ -1,0 +1,14 @@
+{
+    "name": "mpc-cli-pry01",
+    "version": "0.1.0",
+    "type": "module",
+    "private": true,
+    "scripts": {
+        "start": "node src/main.mjs",
+        "dev": "NODE_ENV=development node src/main.mjs"
+    },
+    "dependencies": {
+        "@anthropic-ai/sdk": "^0.22.0",
+        "dotenv": "^16.6.1"
+    }
+}
