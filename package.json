@@ -4,7 +4,7 @@
     "type": "module",
     "private": true,
     "scripts": {
-        "start": "node src/main.mjs",
+        "start": "node --no-warnings src/main.mjs",
         "dev": "NODE_ENV=development node src/main.mjs"
     },
     "dependencies": {

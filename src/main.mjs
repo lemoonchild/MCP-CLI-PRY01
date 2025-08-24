@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import Anthropic from '@anthropic-ai/sdk';
-import readline from 'node:readline';
+import { createInterface } from 'node:readline/promises';
+import { stdin as input, stdout as output } from 'node:process';
 
 const apiKey = process.env.ANTHROPIC_API_KEY;
 if (!apiKey) {
@@ -8,44 +9,64 @@ if (!apiKey) {
   process.exit(1);
 }
 
+const model = process.env.ANTHROPIC_MODEL || 'claude-3-5-sonnet-20240620';
+
 const client = new Anthropic({ apiKey });
 
-function ask(query) {
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  return new Promise(resolve => rl.question(query, ans => {
-    rl.close();
-    resolve(ans);
-  }));
-}
+const rl = createInterface({ input, output });
 
-async function main() {
-  console.log('Chat LLM con Anthropic\n');
-  const userPrompt = await ask('Escribe tu pregunta: ');
+// Historial para mantener contexto en la sesión
+const messages = [];
 
-  try {
-    const response = await client.messages.create({
-      model: process.env.ANTHROPIC_MODEL,
-      max_tokens: 512,
-      messages: [
-        { role: 'user', content: userPrompt }
-      ]
-    });
+console.log('-- Chat LLM con Anthropic (multi-turno) --');
+console.log('\nComandos: \n Escribe: /salir para terminar \n Escribe: /clear para limpiar contexto.\n');
 
-    const blocks = response.content || [];
-    const textBlock = blocks.find(b => b.type === 'text');
-    const text = textBlock?.text ?? '(Sin texto en la respuesta)';
-    console.log('\nRespuesta del LLM:\n');
-    console.log(`\t${text}`);
-  } catch (err) {
-    // Manejo de errores (red, auth, etc.)
-    console.error('Ocurrió un error llamando al LLM:\n');
-    // Muestra mensaje legible + detalles técnicos si estás en dev
-    console.error(err?.message || err);
-    if (process.env.NODE_ENV === 'development') {
-      console.error('\nDetalle técnico:', err);
+async function askLoop() {
+  while (true) {
+    const userPrompt = await rl.question('Escribe tu pregunta: ');
+
+    const trimmed = userPrompt.trim();
+    if (!trimmed) continue;
+
+    // Comandos especiales
+    if (trimmed === '/salir') break;
+    if (trimmed === '/clear') {
+      messages.length = 0;
+      console.log('(Contexto borrado)\n');
+      continue;
     }
-    process.exit(1);
+
+    // Agregar turno de usuario al historial
+    messages.push({ role: 'user', content: trimmed });
+
+    try {
+      const response = await client.messages.create({
+        model,
+        max_tokens: 1024, 
+        messages
+      });
+
+      // Extraer texto de los bloques
+      const text = (response.content || [])
+        .filter(b => b.type === 'text')
+        .map(b => b.text)
+        .join('\n')
+        .trim() || '(Sin texto en la respuesta)';
+
+      console.log('\nRespuesta del asistente:\n' + text + '\n');
+
+      // Agregar turno del asistente al historial para mantener contexto
+      messages.push({ role: 'assistant', content: text });
+
+    } catch (err) {
+      console.error('\nOcurrió un error llamando al LLM:', err?.message || err);
+      if (process.env.NODE_ENV === 'development') {
+        console.error('\nDetalle técnico:', err);
+      }
+      console.log('\n(El chat continúa; puedes intentar de nuevo o usar /salir)\n');
+    }
   }
 }
 
-main();
+askLoop()
+  .finally(() => rl.close());
