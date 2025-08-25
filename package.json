@@ -1,6 +1,6 @@
 {
     "name": "mpc-cli-pry01",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "type": "module",
     "private": true,
     "scripts": {
@@ -9,6 +9,7 @@
     },
     "dependencies": {
         "@anthropic-ai/sdk": "^0.22.0",
+        "@modelcontextprotocol/sdk": "^1.17.4",
         "dotenv": "^16.6.1"
     }
 }
