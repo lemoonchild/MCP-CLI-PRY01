@@ -9,6 +9,7 @@ import { getFilesystemServerConfig, getGitServerConfig } from './mcp/servers.mjs
 import { connectServer } from './mcp/connect.mjs';
 import { fs_createDirectory, fs_writeFile } from './mcp/tools/filesystem.mjs';
 import { git_init, git_add, git_commit, git_status } from './mcp/tools/git.mjs';
+import { buildToolCatalog, fulfillToolUses } from './mcp/toolbridge.mjs';
 import { listTools } from './mcp/tools/call.mjs';
 
 const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -25,9 +26,14 @@ const rl = createInterface({ input, output });
 const messages = [];
 let fsClient = null;
 let gitClient = null;
+let toolsMode  = false;
+let toolsForAnthropic = [];
+let routeMap = new Map();
+let sessionState = { currentRepoPath: null };
+
 
 console.log('-- Chat LLM con Anthropic (multi-turno) --');
-console.log('Comandos:\n  /salir → terminar\n  /clear → limpiar contexto\n  /mcp:connect → conecta FS y Git\n  /demo:git <nombre> → crea repo, README y commit en ./repos/<nombre>\n');
+console.log('Comandos:\n  /salir → terminar\n  /clear → limpiar contexto\n  /mcp:connect → conecta FS y Git\n  /tools:on → conecta MCP y activa uso de tools por el LLM\n  /tools:off → desactiva uso de tools\n  /demo:git <nombre> → crea repo, README y commit en ./repos/<nombre>\n');
 console.log(`(Tus logs se guardarán en: ${getLogFile()})\n`);
 
 async function ensureMcpConnected() {
@@ -36,6 +42,83 @@ async function ensureMcpConnected() {
   const gitCfg = getGitServerConfig();
   fsClient = await connectServer(fsCfg);
   gitClient = await connectServer(gitCfg);
+
+  // Cargar catálogo de tools
+  const catalog = await buildToolCatalog(fsClient, gitClient);
+  toolsForAnthropic = catalog.toolsForAnthropic;
+  routeMap = catalog.routeMap;
+}
+
+// Extrae y concatena texto de bloques "text"
+function extractText(blocks) {
+  return (blocks || [])
+    .filter(b => b.type === 'text')
+    .map(b => b.text)
+    .join('\n')
+    .trim();
+}
+
+// Normaliza la lista de tools desde distintas posibles respuestas MCP
+function normalizeToolsList(res) {
+  if (Array.isArray(res)) return res;
+  if (res && Array.isArray(res.tools)) return res.tools;
+  return [];
+}
+function toText(res) {
+  if (res?.content && Array.isArray(res.content)) {
+    return res.content.filter(b => b.type === 'text').map(b => b.text).join('\n');
+  }
+  return typeof res === 'string' ? res : JSON.stringify(res);
+}
+function extractAuthor(text) {
+  const m = text.match(/Author:\s*(.+?)\s*<([^>]+)>/i);
+  return m ? `${m[1]} <${m[2]}>` : '(autor no detectado)';
+}
+function extractHash(text) {
+  const m = text.match(/commit\s+([0-9a-f]{7,40})/i);
+  return m ? m[1] : '(hash no detectado)';
+}
+
+// Lógica de interacción con tools 
+async function askAnthropicWithTools(messages, client, model) {
+  let resp = await client.messages.create({ model, max_tokens: 1024, tools: toolsForAnthropic, messages });
+  messages.push({ role: 'assistant', content: resp.content });
+
+  let toolResults = await fulfillToolUses(routeMap, resp.content, sessionState);
+
+  while (toolResults.length > 0) {
+    messages.push({ role: 'user', content: toolResults });
+
+    resp = await client.messages.create({ model, max_tokens: 1024, tools: toolsForAnthropic, messages });
+    messages.push({ role: 'assistant', content: resp.content });
+
+    toolResults = await fulfillToolUses(routeMap, resp.content, sessionState);
+  }
+
+  const finalText = extractText(resp.content) || '(Sin texto en la respuesta)';
+  return finalText;
+}
+
+async function connectAndAnnounceTools() {
+  await ensureMcpConnected();
+
+  try {
+    const fsList = normalizeToolsList(await listTools(fsClient));
+    console.log('\nTools de filesystem:');
+    fsList.forEach(t => console.log(' -', t.name));
+  } catch (e) {
+    console.log('No pude listar tools de filesystem:', e?.message || e);
+  }
+
+  try {
+    const gitList = normalizeToolsList(await listTools(gitClient));
+    console.log('\nTools de git:');
+    gitList.forEach(t => console.log(' -', t.name));
+  } catch (e) {
+    console.log('No pude listar tools de git:', e?.message || e);
+  }
+
+  console.log('\nMCP conectado (FS + Git).\n');
 }
 
 async function runGitDemo(repoName) {
@@ -67,12 +150,19 @@ async function runGitDemo(repoName) {
   const commitMsg = 'chore: initial commit with README';
   const commitRes = await git_commit(gitClient, repoPath, commitMsg);
 
-  // Status final (opcional)
+  // Lee el último commit para mostrar autor + hash
+  const logRes = await git_log(gitClient, repoPath, 1);
+  const logText = toText(logRes);
+  const author = extractAuthor(logText);
+  const hash = extractHash(logText);
+
+  // Status final 
   const status = await git_status(gitClient, repoPath);
 
-  console.log('\n--- DEMO COMPLETADA ---');
+  console.log('\n--- REPOSITORIO CREADO  ---');
   console.log(`Repo: ${repoPath}`);
-  console.log('Resultado commit:', JSON.stringify(commitRes, null, 2));
+  console.log(`Autor del commit: ${author}`);
+  console.log(`Hash del commit:  ${hash}`);
   console.log('git status:\n', status?.content ?? status, '\n');
 
   logMessage('mcp', `Commit realizado en ${repoPath}: ${JSON.stringify(commitRes)}`);
@@ -98,31 +188,39 @@ async function askLoop() {
       try { await runGitDemo(name); } catch (e) { console.error('Error en demo:', e?.message || e); }
       continue;
     }
+    if (trimmed === '/tools:on') {
+      await connectAndAnnounceTools();
+      toolsMode = true;
+      console.log('(Modo tools ACTIVADO: el LLM puede usar Filesystem/Git)\n');
+      continue;
+    }
+    if (trimmed === '/tools:off') {
+      toolsMode = false;
+      console.log('(Modo tools DESACTIVADO)\n');
+      continue;
+    }
+
 
     // Agregar turno de usuario al historial
     messages.push({ role: 'user', content: trimmed });
     logMessage('user', trimmed);
 
     try {
-      const response = await client.messages.create({
-        model,
-        max_tokens: 1024, 
-        messages
-      });
+      let text;
+      if (toolsMode && fsClient && gitClient && toolsForAnthropic.length > 0) {
+        text = await askAnthropicWithTools(messages, client, model);
 
-      // Extraer texto de los bloques
-      const text = (response.content || [])
-        .filter(b => b.type === 'text')
-        .map(b => b.text)
-        .join('\n')
-        .trim() || '(Sin texto en la respuesta)';
+        console.log('\nRespuesta del asistente:\n' + text + '\n');
+        logMessage('assistant', text);
 
-      console.log('\nRespuesta del asistente:\n' + text + '\n');
+      } else {
+        const response = await client.messages.create({ model, max_tokens: 1024, messages });
+        text = extractText(response.content) || '(Sin texto en la respuesta)';
 
-      // Agregar turno del asistente al historial para mantener contexto
-      messages.push({ role: 'assistant', content: text });
-      logMessage('assistant', text);
-
+        console.log('\nRespuesta del asistente:\n' + text + '\n');
+        messages.push({ role: 'assistant', content: text });
+        logMessage('assistant', text);
+      }
     } catch (err) {
       console.error('\nOcurrió un error llamando al LLM:', err?.message || err);
       logMessage('system', `Error: ${err?.message || err}`);
