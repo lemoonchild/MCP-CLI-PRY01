@@ -1,4 +1,3 @@
-// src/mcp/servers.mjs
 import 'dotenv/config';
 
 function parseArgs(str) {
