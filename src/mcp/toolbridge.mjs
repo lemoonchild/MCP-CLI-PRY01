@@ -22,20 +22,18 @@ function toAnthropicTools(mcpTools, label) {
   }));
 }
 
-export async function buildToolCatalog(fsClient, gitClient) {
-  const [fsList, gitList] = await Promise.all([
-    listTools(fsClient),
-    listTools(gitClient)
-  ]);
+export async function buildToolCatalog(servers) {
+  const lists = await Promise.all(servers.map(s => listTools(s.client)));
+  const toolsForAnthropic = [];
+  const routeMap = new Map(); // name -> { client, sanitizer }
 
-  const fsAnth = toAnthropicTools(fsList, 'filesystem');
-  const gitAnth = toAnthropicTools(gitList, 'git');
-
-  const toolsForAnthropic = [...fsAnth, ...gitAnth];
-
-  const routeMap = new Map();
-  for (const t of normalizeToolsList(fsList)) routeMap.set(t.name, fsClient);
-  for (const t of normalizeToolsList(gitList)) routeMap.set(t.name, gitClient);
+  servers.forEach((s, idx) => {
+    const lst = lists[idx];
+    toAnthropicTools(lst, s.label).forEach(t => toolsForAnthropic.push(t));
+    normalizeToolsList(lst).forEach(t => {
+      routeMap.set(t.name, { client: s.client, sanitizer: s.sanitizer });
+    });
+  });
 
   return { toolsForAnthropic, routeMap };
 }
@@ -91,31 +89,32 @@ function sanitizeFsArgs(name, args, state) {
   return a;
 }
 
-function sanitizeArgsByTool(name, rawArgs, state) {
-  if (name.startsWith('git_')) {
-    return sanitizeGitArgs(name, rawArgs, state);
-  }
-  return sanitizeFsArgs(name, rawArgs, state);
+function sanitizeArgsByTool(name, rawArgs, state, sanitizer) {
+  if (sanitizer === 'git') return sanitizeGitArgs(name, rawArgs, state);
+  if (sanitizer === 'fs')  return sanitizeFsArgs(name, rawArgs, state);
+  return rawArgs; 
 }
 
 export async function fulfillToolUses(routeMap, contentBlocks, sessionState) {
   const results = [];
 
-  for (const block of contentBlocks || []) {
+  for (const block of (contentBlocks || [])) {
     if (block.type !== 'tool_use') continue;
 
     const { id: tool_use_id, name, input } = block;
-    const client = routeMap.get(name);
-    if (!client) {
+
+    // routeMap guarda: name -> { client, sanitizer }
+    const entry = routeMap.get(name);
+    if (!entry) {
       const msg = `Tool no registrada en routeMap: ${name}`;
       logMessage('mcp', msg);
       results.push({ type: 'tool_result', tool_use_id, content: `ERROR: ${msg}` });
       continue;
     }
+    const { client, sanitizer } = entry;
 
     try {
-      const safeArgs = sanitizeArgsByTool(name, input || {}, sessionState);
-
+      const safeArgs = sanitizeArgsByTool(name, input || {}, sessionState, sanitizer);
       const res = await callTool(client, name, safeArgs);
 
       let textOut = '';

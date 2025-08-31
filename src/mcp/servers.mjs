@@ -33,3 +33,11 @@ export function getGitServerConfig() {
 
   return { name: 'git', command, args, env };
 }
+
+export function getFoodServerConfig() {
+  const command = process.env.MCP_FOOD_COMMAND;
+  const args = parseArgs(process.env.MCP_FOOD_ARGS || '');
+  if (!command) throw new Error('MCP_FOOD_COMMAND no está definido en .env');
+  const env = { ...process.env };
+  return { name: 'food', command, args, env };
+}

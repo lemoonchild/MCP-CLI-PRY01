@@ -5,10 +5,10 @@ import { stdin as input, stdout as output } from 'node:process';
 import { logMessage, getLogFile } from './logger.mjs';
 import { resolve } from 'node:path';
 
-import { getFilesystemServerConfig, getGitServerConfig } from './mcp/servers.mjs';
+import { getFilesystemServerConfig, getGitServerConfig, getFoodServerConfig } from './mcp/servers.mjs';
 import { connectServer } from './mcp/connect.mjs';
 import { fs_createDirectory, fs_writeFile } from './mcp/tools/filesystem.mjs';
-import { git_init, git_add, git_commit, git_status } from './mcp/tools/git.mjs';
+import { git_init, git_add, git_commit, git_status, git_log } from './mcp/tools/git.mjs';
 import { buildToolCatalog, fulfillToolUses } from './mcp/toolbridge.mjs';
 import { listTools } from './mcp/tools/call.mjs';
 
@@ -26,27 +26,26 @@ const rl = createInterface({ input, output });
 const messages = [];
 let fsClient = null;
 let gitClient = null;
+let foodClient = null;
 let toolsMode  = false;
 let toolsForAnthropic = [];
 let routeMap = new Map();
 let sessionState = { currentRepoPath: null };
-
 
 console.log('-- Chat LLM con Anthropic (multi-turno) --');
 console.log('Comandos:\n  /salir → terminar\n  /clear → limpiar contexto\n  /mcp:connect → conecta FS y Git\n  /tools:on → conecta MCP y activa uso de tools por el LLM\n  /tools:off → desactiva uso de tools\n  /demo:git <nombre> → crea repo, README y commit en ./repos/<nombre>\n');
 console.log(`(Tus logs se guardarán en: ${getLogFile()})\n`);
 
 async function ensureMcpConnected() {
-  if (fsClient && gitClient) return;
+  if (fsClient && gitClient && foodClient) return;
+
   const fsCfg = getFilesystemServerConfig();
   const gitCfg = getGitServerConfig();
-  fsClient = await connectServer(fsCfg);
-  gitClient = await connectServer(gitCfg);
+  const foodCfg = getFoodServerConfig();
 
-  // Cargar catálogo de tools
-  const catalog = await buildToolCatalog(fsClient, gitClient);
-  toolsForAnthropic = catalog.toolsForAnthropic;
-  routeMap = catalog.routeMap;
+  fsClient = fsClient ?? await connectServer(fsCfg);
+  gitClient = gitClient ?? await connectServer(gitCfg);
+  foodClient = foodClient ?? await connectServer(foodCfg);
 }
 
 // Extrae y concatena texto de bloques "text"
@@ -101,24 +100,28 @@ async function askAnthropicWithTools(messages, client, model) {
 
 async function connectAndAnnounceTools() {
   await ensureMcpConnected();
+  // Construye catálogo con los 3 servers y anuncia
+  const catalog = await buildToolCatalog([
+    { label: 'filesystem', client: fsClient, sanitizer: 'fs' },
+    { label: 'git',        client: gitClient, sanitizer: 'git' },
+    { label: 'food',       client: foodClient, sanitizer: 'none' },
+  ]);
+  toolsForAnthropic = catalog.toolsForAnthropic;
+  routeMap = catalog.routeMap;
 
-  try {
-    const fsList = normalizeToolsList(await listTools(fsClient));
-    console.log('\nTools de filesystem:');
-    fsList.forEach(t => console.log(' -', t.name));
-  } catch (e) {
-    console.log('No pude listar tools de filesystem:', e?.message || e);
-  }
-
-  try {
-    const gitList = normalizeToolsList(await listTools(gitClient));
-    console.log('\nTools de git:');
-    gitList.forEach(t => console.log(' -', t.name));
-  } catch (e) {
-    console.log('No pude listar tools de git:', e?.message || e);
-  }
-
-  console.log('\nMCP conectado (FS + Git).\n');
+  const show = async (label, client) => {
+    try {
+      const lst = normalizeToolsList(await listTools(client));
+      console.log(`\nTools de ${label}:`);
+      lst.forEach(t => console.log(' -', t.name));
+    } catch (e) {
+      console.log(`No pude listar tools de ${label}:`, e?.message || e);
+    }
+  };
+  await show('filesystem', fsClient);
+  await show('git', gitClient);
+  await show('food', foodClient);
+  console.log('\nMCP conectado (FS + Git + Food).\n');
 }
 
 async function runGitDemo(repoName) {
@@ -191,7 +194,7 @@ async function askLoop() {
     if (trimmed === '/tools:on') {
       await connectAndAnnounceTools();
       toolsMode = true;
-      console.log('(Modo tools ACTIVADO: el LLM puede usar Filesystem/Git)\n');
+      console.log('(Modo tools ACTIVADO: el LLM puede usar Filesystem/Git/Food)\n');
       continue;
     }
     if (trimmed === '/tools:off') {
@@ -199,7 +202,6 @@ async function askLoop() {
       console.log('(Modo tools DESACTIVADO)\n');
       continue;
     }
-
 
     // Agregar turno de usuario al historial
     messages.push({ role: 'user', content: trimmed });
