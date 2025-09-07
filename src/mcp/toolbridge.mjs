@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { listTools } from './tools/call.mjs';
+import { listTools, callTool } from './tools/call.mjs';
 import { logMessage } from '../logger.mjs';
 
 const BASE_REPOS = path.resolve(process.cwd(), process.env.MCP_BASE_REPOS || 'repos');
@@ -115,8 +115,8 @@ export async function fulfillToolUses(routeMap, contentBlocks, sessionState) {
 
     try {
       const safeArgs = sanitizeArgsByTool(name, input || {}, sessionState, sanitizer);
-      const res = await client.callTool(name, safeArgs);
-
+      const res = await callTool(client, name, safeArgs);
+      
       let textOut = '';
       if (res?.content && Array.isArray(res.content)) {
         textOut = res.content
@@ -126,11 +126,15 @@ export async function fulfillToolUses(routeMap, contentBlocks, sessionState) {
         textOut = typeof res === 'string' ? res : JSON.stringify(res);
       }
 
-      results.push({ type: 'tool_result', tool_use_id, content: textOut });
-      logMessage('mcp', `tool_result ${name}: ${textOut.substring(0, 400)}`);
+      results.push({ type: 'tool_result', tool_use_id, content: [{ type: 'text', text: textOut }] });
+      logMessage('mcp', `tool_result ${name}: ${(textOut || '').substring(0, 400)}`);
     } catch (e) {
       const err = e?.message || String(e);
-      results.push({ type: 'tool_result', tool_use_id, content: `ERROR: ${err}` });
+      results.push({
+        type: 'tool_result',
+        tool_use_id,
+        content: [{ type: 'text', text: `ERROR: ${err}` }],
+      });
       logMessage('mcp', `ERROR tool ${name}: ${err}`);
     }
   }
