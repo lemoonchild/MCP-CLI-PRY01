@@ -10,6 +10,7 @@
     "dependencies": {
         "@anthropic-ai/sdk": "^0.60.0",
         "@modelcontextprotocol/sdk": "^1.17.4",
-        "dotenv": "^16.6.1"
+        "dotenv": "^16.6.1",
+        "node-fetch": "^3.3.2"
     }
 }

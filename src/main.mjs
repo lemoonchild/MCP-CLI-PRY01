@@ -5,7 +5,7 @@ import { stdin as input, stdout as output } from 'node:process';
 import { logMessage, getLogFile } from './logger.mjs';
 import { resolve } from 'node:path';
 
-import { getFilesystemServerConfig, getGitServerConfig, getFoodServerConfig } from './mcp/servers.mjs';
+import { getFilesystemServerConfig, getGitServerConfig, getFoodServerConfig, getJokesServerConfig } from './mcp/servers.mjs';
 import { connectServer } from './mcp/connect.mjs';
 import { fs_createDirectory, fs_writeFile } from './mcp/tools/filesystem.mjs';
 import { git_init, git_add, git_commit, git_status, git_log } from './mcp/tools/git.mjs';
@@ -27,6 +27,7 @@ const messages = [];
 let fsClient = null;
 let gitClient = null;
 let foodClient = null;
+let jokesClient = null;
 let toolsMode  = false;
 let toolsForAnthropic = [];
 let routeMap = new Map();
@@ -42,10 +43,12 @@ async function ensureMcpConnected() {
   const fsCfg = getFilesystemServerConfig();
   const gitCfg = getGitServerConfig();
   const foodCfg = getFoodServerConfig();
+  const jokesCfg = getJokesServerConfig();
 
   fsClient = fsClient ?? await connectServer(fsCfg);
   gitClient = gitClient ?? await connectServer(gitCfg);
   foodClient = foodClient ?? await connectServer(foodCfg);
+  jokesClient= jokesClient?? await connectServer(jokesCfg); 
 }
 
 // Extrae y concatena texto de bloques "text"
@@ -105,9 +108,14 @@ async function connectAndAnnounceTools() {
     { label: 'filesystem', client: fsClient, sanitizer: 'fs' },
     { label: 'git',        client: gitClient, sanitizer: 'git' },
     { label: 'food',       client: foodClient, sanitizer: 'none' },
+    { label: 'jokes',      client: jokesClient, sanitizer: 'none' }, 
   ]);
+
   toolsForAnthropic = catalog.toolsForAnthropic;
   routeMap = catalog.routeMap;
+
+  console.log('Tools enviadas a Anthropic:');
+  console.dir(toolsForAnthropic, { depth: null });
 
   const show = async (label, client) => {
     try {
@@ -121,7 +129,8 @@ async function connectAndAnnounceTools() {
   await show('filesystem', fsClient);
   await show('git', gitClient);
   await show('food', foodClient);
-  console.log('\nMCP conectado (FS + Git + Food).\n');
+  await show('jokes', jokesClient);
+  console.log('\nMCP conectado (FS + Git + Food + Dad Jokes).\n');
 }
 
 async function runGitDemo(repoName) {
@@ -194,7 +203,7 @@ async function askLoop() {
     if (trimmed === '/tools:on') {
       await connectAndAnnounceTools();
       toolsMode = true;
-      console.log('(Modo tools ACTIVADO: el LLM puede usar Filesystem/Git/Food)\n');
+      console.log('(Modo tools ACTIVADO: el LLM puede usar Filesystem/Git/Food/Jokes)\n');
       continue;
     }
     if (trimmed === '/tools:off') {
@@ -202,14 +211,13 @@ async function askLoop() {
       console.log('(Modo tools DESACTIVADO)\n');
       continue;
     }
-
     // Agregar turno de usuario al historial
     messages.push({ role: 'user', content: trimmed });
     logMessage('user', trimmed);
 
     try {
       let text;
-      if (toolsMode && fsClient && gitClient && toolsForAnthropic.length > 0) {
+      if (toolsMode && toolsForAnthropic.length > 0) {
         text = await askAnthropicWithTools(messages, client, model);
 
         console.log('\nRespuesta del asistente:\n' + text + '\n');

@@ -1,6 +1,7 @@
 import { logMessage } from '../logger.mjs';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { connectHttpServer } from './connect_http.mjs';
 
 function ensureConfig(cfg) {
   if (!cfg?.command || typeof cfg.command !== 'string') {
@@ -11,6 +12,11 @@ function ensureConfig(cfg) {
 }
 
 export async function connectServer(cfg) {
+
+  if (cfg.transport === 'http') {
+    return connectHttpServer(cfg); 
+  }
+
   ensureConfig(cfg);
 
   logMessage('mcp', `Lanzando servidor ${cfg.name}: ${cfg.command} ${cfg.args.join(' ')}`);

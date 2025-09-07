@@ -41,3 +41,17 @@ export function getFoodServerConfig() {
   const env = { ...process.env };
   return { name: 'food', command, args, env };
 }
+
+export function getJokesServerConfig() {
+  const url = process.env.MCP_JOKES_URL;
+  if (!url) throw new Error('MCP_JOKES_URL no está definido en .env');
+
+  return {
+    name: 'jokes',
+    transport: 'http',
+    url,                         
+    rpcPath: '/rpc',             
+    listPath: null,             
+    headers: { 'Content-Type': 'application/json' },
+  };
+}

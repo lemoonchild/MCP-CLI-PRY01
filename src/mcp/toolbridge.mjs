@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { listTools, callTool } from './tools/call.mjs';
+import { listTools } from './tools/call.mjs';
 import { logMessage } from '../logger.mjs';
 
 const BASE_REPOS = path.resolve(process.cwd(), process.env.MCP_BASE_REPOS || 'repos');
@@ -115,7 +115,7 @@ export async function fulfillToolUses(routeMap, contentBlocks, sessionState) {
 
     try {
       const safeArgs = sanitizeArgsByTool(name, input || {}, sessionState, sanitizer);
-      const res = await callTool(client, name, safeArgs);
+      const res = await client.callTool(name, safeArgs);
 
       let textOut = '';
       if (res?.content && Array.isArray(res.content)) {
