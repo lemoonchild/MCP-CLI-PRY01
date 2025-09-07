@@ -5,7 +5,7 @@ import { stdin as input, stdout as output } from 'node:process';
 import { logMessage, getLogFile } from './logger.mjs';
 import { resolve } from 'node:path';
 
-import { getFilesystemServerConfig, getGitServerConfig, getFoodServerConfig, getJokesServerConfig } from './mcp/servers.mjs';
+import { getFilesystemServerConfig, getGitServerConfig, getFoodServerConfig, getJokesServerConfig, getWfServerConfig } from './mcp/servers.mjs';
 import { connectServer } from './mcp/connect.mjs';
 import { fs_createDirectory, fs_writeFile } from './mcp/tools/filesystem.mjs';
 import { git_init, git_add, git_commit, git_status, git_log } from './mcp/tools/git.mjs';
@@ -28,6 +28,7 @@ let fsClient = null;
 let gitClient = null;
 let foodClient = null;
 let jokesClient = null;
+let wfClient = null;
 let toolsMode  = false;
 let toolsForAnthropic = [];
 let routeMap = new Map();
@@ -38,17 +39,19 @@ console.log('Comandos:\n  /salir → terminar\n  /clear → limpiar contexto\n  
 console.log(`(Tus logs se guardarán en: ${getLogFile()})\n`);
 
 async function ensureMcpConnected() {
-  if (fsClient && gitClient && foodClient) return;
+  if (fsClient && gitClient && foodClient && jokesClient && wfClient) return;
 
   const fsCfg = getFilesystemServerConfig();
   const gitCfg = getGitServerConfig();
   const foodCfg = getFoodServerConfig();
   const jokesCfg = getJokesServerConfig();
+  const wfCfg = getWfServerConfig();
 
   fsClient = fsClient ?? await connectServer(fsCfg);
   gitClient = gitClient ?? await connectServer(gitCfg);
   foodClient = foodClient ?? await connectServer(foodCfg);
-  jokesClient= jokesClient?? await connectServer(jokesCfg); 
+  jokesClient= jokesClient ?? await connectServer(jokesCfg); 
+  wfClient = wfClient ?? await connectServer(wfCfg); 
 }
 
 // Extrae y concatena texto de bloques "text"
@@ -109,6 +112,7 @@ async function connectAndAnnounceTools() {
     { label: 'git',        client: gitClient, sanitizer: 'git' },
     { label: 'food',       client: foodClient, sanitizer: 'none' },
     { label: 'jokes',      client: jokesClient, sanitizer: 'none' }, 
+    { label: 'wf',      client: wfClient, sanitizer: 'none' }, 
   ]);
 
   toolsForAnthropic = catalog.toolsForAnthropic;
@@ -130,7 +134,8 @@ async function connectAndAnnounceTools() {
   await show('git', gitClient);
   await show('food', foodClient);
   await show('jokes', jokesClient);
-  console.log('\nMCP conectado (FS + Git + Food + Dad Jokes).\n');
+  await show('wf', wfClient);
+  console.log('\nMCP conectado (FS + Git + Food + Dad Jokes + Wf).\n');
 }
 
 async function runGitDemo(repoName) {
