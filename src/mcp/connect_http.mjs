@@ -2,7 +2,7 @@ import fetch from 'node-fetch';
 
 export function connectHttpServer(cfg) {
     const base = cfg.url.replace(/\/+$/, '');
-    const rpcUrl = base + (cfg.rpcPath || '/rpc');
+    const rpcUrl = base;
     const headers = cfg.headers || { 'Content-Type': 'application/json' };
 
     // Mapa de nombres "seguros" (para Anthropic) -> método JSON-RPC real
@@ -40,22 +40,48 @@ export function connectHttpServer(cfg) {
 
     async function jsonRpc(method, params = {}) {
         const payload = { jsonrpc: '2.0', id: Date.now(), method, params };
-        const res = await fetch(rpcUrl, { method: 'POST', headers, body: JSON.stringify(payload) });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok || data.error) {
-            const msg = data?.error?.message || `HTTP ${res.status}`;
+
+        const res = await fetch(rpcUrl, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(payload)
+        });
+
+        let data;
+        try {
+            data = await res.json();
+        } catch {
+            throw new Error(`Respuesta inválida del servidor (no es JSON) - HTTP ${res.status}`);
         }
+
+        if (!res.ok || data?.error) {
+            const msg = data?.error?.message || `HTTP ${res.status}`;
+            throw new Error(`Error al llamar a ${method}: ${msg}`);
+        }
+
         return data.result;
     }
+    
+    return {
+            async listTools() {
+                return tools;
+            },
+            async callTool(name, args = {}) {
+                if (typeof name !== 'string') {
+                    throw new Error(`Nombre de tool inválido: ${JSON.stringify(name)}`);
+                }
 
-  return {
-        async listTools() {
-        return tools;
-        },
-        async callTool(name, args = {}) {
-            const method = nameMap[name] || name;
-            return jsonRpc(method, args);
-        },
-        info: { transport: 'http', name: cfg.name, base, rpcUrl },
-    };
+                const method = nameMap[name] || name;
+
+                if (method === 'tools/call') {
+                    return jsonRpc('tools/call', {
+                        name,
+                        arguments: args
+                    });
+                }
+
+                return jsonRpc(method, args);
+            },
+            info: { transport: 'http', name: cfg.name, base, rpcUrl },
+        };
 }
