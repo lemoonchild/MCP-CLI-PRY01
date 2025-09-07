@@ -27,6 +27,7 @@ export async function connectServer(cfg) {
     command: cfg.command,
     args: cfg.args,
     env: cfg.env,
+    cwd: cfg.cwd,
   });
 
   const client = new Client({

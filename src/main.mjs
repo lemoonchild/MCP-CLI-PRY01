@@ -5,7 +5,7 @@ import { stdin as input, stdout as output } from 'node:process';
 import { logMessage, getLogFile } from './logger.mjs';
 import { resolve } from 'node:path';
 
-import { getFilesystemServerConfig, getGitServerConfig, getFoodServerConfig, getJokesServerConfig, getWfServerConfig } from './mcp/servers.mjs';
+import { getFilesystemServerConfig, getGitServerConfig, getFoodServerConfig, getJokesServerConfig, getWfServerConfig, getTrainerServerConfig } from './mcp/servers.mjs';
 import { connectServer } from './mcp/connect.mjs';
 import { fs_createDirectory, fs_writeFile } from './mcp/tools/filesystem.mjs';
 import { git_init, git_add, git_commit, git_status, git_log } from './mcp/tools/git.mjs';
@@ -29,6 +29,7 @@ let gitClient = null;
 let foodClient = null;
 let jokesClient = null;
 let wfClient = null;
+let trainerClient = null; 
 let toolsMode  = false;
 let toolsForAnthropic = [];
 let routeMap = new Map();
@@ -46,12 +47,14 @@ async function ensureMcpConnected() {
   const foodCfg = getFoodServerConfig();
   const jokesCfg = getJokesServerConfig();
   const wfCfg = getWfServerConfig();
+  const trainerCfg = getTrainerServerConfig();
 
   fsClient = fsClient ?? await connectServer(fsCfg);
   gitClient = gitClient ?? await connectServer(gitCfg);
   foodClient = foodClient ?? await connectServer(foodCfg);
   jokesClient= jokesClient ?? await connectServer(jokesCfg); 
   wfClient = wfClient ?? await connectServer(wfCfg); 
+  trainerClient = trainerClient ?? await connectServer(trainerCfg);
 }
 
 // Extrae y concatena texto de bloques "text"
@@ -113,6 +116,7 @@ async function connectAndAnnounceTools() {
     { label: 'food',       client: foodClient, sanitizer: 'none' },
     { label: 'jokes',      client: jokesClient, sanitizer: 'none' }, 
     { label: 'wf',      client: wfClient, sanitizer: 'none' }, 
+    { label: 'trainer', client: trainerClient, sanitizer: 'none' },
   ]);
 
   toolsForAnthropic = catalog.toolsForAnthropic;
@@ -135,7 +139,8 @@ async function connectAndAnnounceTools() {
   await show('food', foodClient);
   await show('jokes', jokesClient);
   await show('wf', wfClient);
-  console.log('\nMCP conectado (FS + Git + Food + Dad Jokes + Wf).\n');
+  await show ('trainer', trainerClient); 
+  console.log('\nMCP conectado (FS + Git + Food + Dad Jokes + Wf + trainer).\n');
 }
 
 async function runGitDemo(repoName) {

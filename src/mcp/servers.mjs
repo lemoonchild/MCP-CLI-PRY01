@@ -63,3 +63,16 @@ export function getWfServerConfig() {
   const env = { ...process.env };
   return { name: 'wf', command, args, env };
 }
+
+export function getTrainerServerConfig() {
+  const command = process.env.MCP_TRAINER_COMMAND;
+  const args = parseArgs(process.env.MCP_TRAINER_ARGS || '');
+  const cwd = process.env.MCP_TRAINER_CWD;
+
+  if (!command) throw new Error('MCP_TRAINER_COMMAND no está definido en .env');
+  if (!cwd) throw new Error('MCP_TRAINER_CWD no está definido en .env');
+
+  const env = { ...process.env };
+
+  return { name: 'trainer', command, args, env, cwd };
+}
