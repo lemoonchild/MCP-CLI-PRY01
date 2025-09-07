@@ -55,3 +55,11 @@ export function getJokesServerConfig() {
     headers: { 'Content-Type': 'application/json' },
   };
 }
+
+export function getWfServerConfig() {
+  const command = process.env.MCP_WARFRAME_COMMAND;
+  const args = parseArgs(process.env.MCP_WARFRAME_ARGS || '');
+  if (!command) throw new Error('MCP_WARFRAME_ARGS no está definido en .env');
+  const env = { ...process.env };
+  return { name: 'wf', command, args, env };
+}
