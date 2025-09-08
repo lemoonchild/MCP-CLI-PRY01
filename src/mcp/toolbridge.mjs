@@ -5,12 +5,25 @@ import { logMessage } from '../logger.mjs';
 const BASE_REPOS = path.resolve(process.cwd(), process.env.MCP_BASE_REPOS || 'repos');
 const BASE_DEMO  = path.resolve(process.cwd(), process.env.MCP_BASE_DEMO  || 'demo');
 
+/**
+ * Normalizes a tool list response, handling different response shapes.
+ * 
+ * @param {any} res - The raw response from listTools.
+ * @returns {Array<object>} A normalized array of tool objects.
+ */
 function normalizeToolsList(res) {
   if (Array.isArray(res)) return res;
   if (res && Array.isArray(res.tools)) return res.tools;
   return [];
 }
 
+/**
+ * Converts a list of MCP tools to the Anthropic-compatible format.
+ * 
+ * @param {Array<object>} mcpTools - Tools from the MCP server.
+ * @param {string} label - Label used for fallback descriptions.
+ * @returns {Array<object>} Tools formatted for Anthropic LLM.
+ */
 function toAnthropicTools(mcpTools, label) {
   return normalizeToolsList(mcpTools).map(t => ({
     name: t.name,
@@ -22,6 +35,12 @@ function toAnthropicTools(mcpTools, label) {
   }));
 }
 
+/**
+ * Builds the complete tool catalog for Anthropic and routing.
+ * 
+ * @param {Array<{ label: string, client: any, sanitizer?: string }>} servers - List of connected MCP servers.
+ * @returns {Promise<{ toolsForAnthropic: Array<object>, routeMap: Map<string, { client: any, sanitizer?: string }> }>}
+ */
 export async function buildToolCatalog(servers) {
   const lists = await Promise.all(servers.map(s => listTools(s.client)));
   const toolsForAnthropic = [];
@@ -38,6 +57,13 @@ export async function buildToolCatalog(servers) {
   return { toolsForAnthropic, routeMap };
 }
 
+/**
+ * Ensures a path is safely inside the base directory.
+ *
+ * @param {string} base - The base directory.
+ * @param {string} inputPath - The input path to validate.
+ * @returns {string} The resolved, safe absolute path.
+ */
 function forceUnderBase(base, inputPath) {
   let p = path.isAbsolute(inputPath) ? inputPath : path.join(base, inputPath);
   p = path.resolve(p);
@@ -48,6 +74,14 @@ function forceUnderBase(base, inputPath) {
   return p;
 }
 
+/**
+ * Sanitizes arguments for Git-related tools (e.g., resolving paths).
+ * 
+ * @param {string} name - Tool name.
+ * @param {object} args - Raw arguments.
+ * @param {object} state - Mutable session state (for tracking paths).
+ * @returns {object} Sanitized arguments.
+ */
 function sanitizeGitArgs(name, args, state) {
   const a = { ...(args || {}) };
 
@@ -70,6 +104,14 @@ function sanitizeGitArgs(name, args, state) {
   return a;
 }
 
+/**
+ * Sanitizes arguments for Filesystem-related tools.
+ * 
+ * @param {string} name - Tool name.
+ * @param {object} args - Raw arguments.
+ * @param {object} state - Mutable session state (for tracking paths).
+ * @returns {object} Sanitized arguments.
+ */
 function sanitizeFsArgs(name, args, state) {
   const a = { ...(args || {}) };
   const pathKeys = ['path', 'source', 'destination']; 
@@ -89,12 +131,29 @@ function sanitizeFsArgs(name, args, state) {
   return a;
 }
 
+/**
+ * Dispatches argument sanitization based on tool type.
+ * 
+ * @param {string} name - Tool name.
+ * @param {object} rawArgs - Raw arguments from LLM.
+ * @param {object} state - Session state.
+ * @param {string} sanitizer - Type of sanitizer ('git', 'fs', etc.).
+ * @returns {object} Sanitized arguments.
+ */
 function sanitizeArgsByTool(name, rawArgs, state, sanitizer) {
   if (sanitizer === 'git') return sanitizeGitArgs(name, rawArgs, state);
   if (sanitizer === 'fs')  return sanitizeFsArgs(name, rawArgs, state);
   return rawArgs; 
 }
 
+/**
+ * Fulfills tool_use blocks from the LLM using the appropriate MCP client/tool.
+ * 
+ * @param {Map<string, { client: any, sanitizer?: string }>} routeMap - Map of tool names to clients.
+ * @param {Array<object>} contentBlocks - Blocks returned by the LLM (e.g., Claude).
+ * @param {object} sessionState - Mutable session state for path resolution.
+ * @returns {Promise<Array<object>>} List of tool_result blocks to send back to the LLM.
+ */
 export async function fulfillToolUses(routeMap, contentBlocks, sessionState) {
   const results = [];
 
@@ -103,7 +162,7 @@ export async function fulfillToolUses(routeMap, contentBlocks, sessionState) {
 
     const { id: tool_use_id, name, input } = block;
 
-    // routeMap guarda: name -> { client, sanitizer }
+    // routeMap saves: name -> { client, sanitizer }
     const entry = routeMap.get(name);
     if (!entry) {
       const msg = `Tool no registrada en routeMap: ${name}`;

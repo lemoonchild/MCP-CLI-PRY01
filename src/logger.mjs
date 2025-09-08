@@ -1,19 +1,28 @@
 import { appendFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
+/**
+ * Directory path for storing log files.
+ * Will be created automatically if it doesn't exist.
+ */
 const LOG_DIR = join(process.cwd(), 'src', 'logs');
 
 if (!existsSync(LOG_DIR)) {
   mkdirSync(LOG_DIR, { recursive: true });
 }
 
-// Nombre de archivo basado en fecha/hora
+/**
+ * Path to the current session log file.
+ * Filename is based on current date and time (safe for filesystems).
+ * Format: session-YYYY-MM-DDTHH-MM-SS-SSSZ.jsonl
+ */
 const sessionFile = join(LOG_DIR, `session-${new Date().toISOString().replace(/[:.]/g, '-')}.jsonl`);
 
 /**
- * Escribe una entrada de log en formato JSONL
- * @param {string} role "user" | "assistant" | "system" | "mcp"
- * @param {string} content texto del mensaje
+ * Appends a log entry to the current session file in JSON Lines format.
+ *
+ * @param {string} role - The role of the message sender. Expected values: "user", "assistant", "system", "mcp".
+ * @param {string} content - The content of the message to log.
  */
 export function logMessage(role, content) {
   const entry = {
@@ -26,7 +35,9 @@ export function logMessage(role, content) {
 }
 
 /**
- * Devuelve la ruta del archivo actual de la sesión
+ * Returns the full path to the current session log file.
+ *
+ * @returns {string} Path to the log file.
  */
 export function getLogFile() {
   return sessionFile;

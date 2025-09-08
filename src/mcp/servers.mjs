@@ -1,5 +1,12 @@
 import 'dotenv/config';
 
+/**
+ * Parses a string of command-line arguments into an array.
+ * Supports quoted arguments with spaces.
+ *
+ * @param {string} str - The raw arguments string.
+ * @returns {string[]} An array of individual arguments.
+ */
 function parseArgs(str) {
   if (!str) return [];
   const re = /[^\s"']+|"([^"]*)"|'([^']*)'/g;
@@ -11,6 +18,12 @@ function parseArgs(str) {
   return out;
 }
 
+/**
+ * Returns configuration for the Filesystem MCP server.
+ *
+ * @returns {object} Configuration object for the Filesystem server.
+ * @throws {Error} If MCP_FS_COMMAND is not defined.
+ */
 export function getFilesystemServerConfig() {
   const command = process.env.MCP_FS_COMMAND;
   const args = parseArgs(process.env.MCP_FS_ARGS || '');
@@ -18,6 +31,12 @@ export function getFilesystemServerConfig() {
   return { name: 'filesystem', command, args, env: { ...process.env } };
 }
 
+/**
+ * Returns configuration for the Git MCP server.
+ *
+ * @returns {object} Configuration object for the Git server.
+ * @throws {Error} If MCP_GIT_COMMAND is not defined.
+ */
 export function getGitServerConfig() {
   const command = process.env.MCP_GIT_COMMAND;
   const args = parseArgs(process.env.MCP_GIT_ARGS || '');
@@ -34,6 +53,12 @@ export function getGitServerConfig() {
   return { name: 'git', command, args, env };
 }
 
+/**
+ * Returns configuration for the Food Recommender MCP server.
+ *
+ * @returns {object} Configuration object for the Food server.
+ * @throws {Error} If MCP_FOOD_COMMAND is not defined.
+ */
 export function getFoodServerConfig() {
   const command = process.env.MCP_FOOD_COMMAND;
   const args = parseArgs(process.env.MCP_FOOD_ARGS || '');
@@ -42,6 +67,12 @@ export function getFoodServerConfig() {
   return { name: 'food', command, args, env };
 }
 
+/**
+ * Returns configuration for the remote Dad Jokes MCP server (HTTP-based).
+ *
+ * @returns {object} Configuration object for the HTTP Jokes server.
+ * @throws {Error} If MCP_JOKES_URL is not defined.
+ */
 export function getJokesServerConfig() {
   const url = process.env.MCP_JOKES_URL;
   if (!url) throw new Error('MCP_JOKES_URL no está definido en .env');
@@ -56,6 +87,12 @@ export function getJokesServerConfig() {
   };
 }
 
+/**
+ * Returns configuration for the Warframe MCP server.
+ *
+ * @returns {object} Configuration object for the Warframe server.
+ * @throws {Error} If MCP_WARFRAME_COMMAND is not defined.
+ */
 export function getWfServerConfig() {
   const command = process.env.MCP_WARFRAME_COMMAND;
   const args = parseArgs(process.env.MCP_WARFRAME_ARGS || '');
@@ -64,6 +101,12 @@ export function getWfServerConfig() {
   return { name: 'wf', command, args, env };
 }
 
+/**
+ * Returns configuration for the Trainer MCP server.
+ *
+ * @returns {object} Configuration object for the Trainer server.
+ * @throws {Error} If MCP_TRAINER_COMMAND or MCP_TRAINER_CWD is not defined.
+ */
 export function getTrainerServerConfig() {
   const command = process.env.MCP_TRAINER_COMMAND;
   const args = parseArgs(process.env.MCP_TRAINER_ARGS || '');

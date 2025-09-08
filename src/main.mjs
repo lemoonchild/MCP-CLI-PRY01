@@ -12,6 +12,28 @@ import { git_init, git_add, git_commit, git_status, git_log } from './mcp/tools/
 import { buildToolCatalog, fulfillToolUses } from './mcp/toolbridge.mjs';
 import { listTools } from './mcp/tools/call.mjs';
 
+/**
+ * @fileoverview
+ * CLI chat client that connects to Anthropic's LLM with optional MCP (Model Context Protocol) tool integration.
+ * Supports interactive multi-turn conversations, filesystem and git operations, food/jokes recommendations,
+ * workflow orchestration, and training tool demos.
+ *
+ * Commands:
+ *   /salir → terminate session
+ *   /clear → clear conversation context
+ *   /mcp:connect → connect to MCP servers (FS, Git, Food, Jokes, Workflow, Trainer)
+ *   /tools:on → enable MCP tools for LLM
+ *   /tools:off → disable MCP tools
+ *   /demo:git <name> → create git repo with README and initial commit in ./repos/<name>
+ *
+ * Environment variables:
+ *   ANTHROPIC_API_KEY  - Required, API key for Anthropic
+ *   ANTHROPIC_MODEL    - Optional, defaults to "claude-3-5-sonnet-20240620"
+ */
+
+/**
+* Load Anthropic API key and model.
+*/
 const apiKey = process.env.ANTHROPIC_API_KEY;
 if (!apiKey) {
   console.error('Falta ANTHROPIC_API_KEY en tu archivo .env');
@@ -20,9 +42,15 @@ if (!apiKey) {
 
 const model = process.env.ANTHROPIC_MODEL || 'claude-3-5-sonnet-20240620';
 const client = new Anthropic({ apiKey });
+
+/**
+* Readline interface for user interaction.
+*/
 const rl = createInterface({ input, output });
 
-// Historial para mantener contexto en la sesión
+/**
+* Session and tool state variables.
+*/
 const messages = [];
 let fsClient = null;
 let gitClient = null;
@@ -39,6 +67,12 @@ console.log('-- Chat LLM con Anthropic (multi-turno) --');
 console.log('Comandos:\n  /salir → terminar\n  /clear → limpiar contexto\n  /mcp:connect → conecta FS y Git\n  /tools:on → conecta MCP y activa uso de tools por el LLM\n  /tools:off → desactiva uso de tools\n  /demo:git <nombre> → crea repo, README y commit en ./repos/<nombre>\n');
 console.log(`(Tus logs se guardarán en: ${getLogFile()})\n`);
 
+/**
+ * Ensures MCP servers (filesystem, git, food, jokes, workflow, trainer) are connected.
+ * Initializes clients if they do not already exist.
+ *
+ * @returns {Promise<void>}
+ */
 async function ensureMcpConnected() {
   if (fsClient && gitClient && foodClient && jokesClient && wfClient) return;
 
@@ -57,7 +91,12 @@ async function ensureMcpConnected() {
   trainerClient = trainerClient ?? await connectServer(trainerCfg);
 }
 
-// Extrae y concatena texto de bloques "text"
+/**
+ * Extracts plain text from a list of Anthropic message blocks.
+ *
+ * @param {Array<{ type: string, text?: string }>} blocks - Response blocks
+ * @returns {string} Concatenated plain text
+ */
 function extractText(blocks) {
   return (blocks || [])
     .filter(b => b.type === 'text')
@@ -66,28 +105,62 @@ function extractText(blocks) {
     .trim();
 }
 
-// Normaliza la lista de tools desde distintas posibles respuestas MCP
+/**
+ * Normalizes tool list responses from MCP servers.
+ *
+ * @param {any} res - Raw response
+ * @returns {Array<{ name: string }>} List of tools
+ */
 function normalizeToolsList(res) {
   if (Array.isArray(res)) return res;
   if (res && Array.isArray(res.tools)) return res.tools;
   return [];
 }
+
+/**
+ * Converts a tool or message response into plain text.
+ *
+ * @param {any} res - Response (string, object, or array of blocks)
+ * @returns {string} Text representation
+ */
 function toText(res) {
   if (res?.content && Array.isArray(res.content)) {
     return res.content.filter(b => b.type === 'text').map(b => b.text).join('\n');
   }
   return typeof res === 'string' ? res : JSON.stringify(res);
 }
+
+/**
+ * Extracts author information from a git log message.
+ *
+ * @param {string} text - Git log output
+ * @returns {string} Author in format "Name <email>"
+ */
 function extractAuthor(text) {
   const m = text.match(/Author:\s*(.+?)\s*<([^>]+)>/i);
   return m ? `${m[1]} <${m[2]}>` : '(autor no detectado)';
 }
+
+/**
+ * Extracts commit hash from a git log message.
+ *
+ * @param {string} text - Git log output
+ * @returns {string} Commit hash or placeholder
+ */
 function extractHash(text) {
   const m = text.match(/commit\s+([0-9a-f]{7,40})/i);
   return m ? m[1] : '(hash no detectado)';
 }
 
-// Lógica de interacción con tools 
+/**
+ * Handles a conversation turn with Anthropic when tools are enabled.
+ * Executes tool calls and integrates results into the conversation.
+ *
+ * @param {Array<{ role: string, content: any }>} messages - Conversation history
+ * @param {Anthropic} client - Anthropic SDK client
+ * @param {string} model - Model name
+ * @returns {Promise<string>} Final assistant reply text
+ */
 async function askAnthropicWithTools(messages, client, model) {
   let resp = await client.messages.create({ model, max_tokens: 1024, tools: toolsForAnthropic, messages });
   messages.push({ role: 'assistant', content: resp.content });
@@ -107,9 +180,15 @@ async function askAnthropicWithTools(messages, client, model) {
   return finalText;
 }
 
+/**
+ * Connects to MCP servers and announces available tools.
+ * Updates global tool catalog and routing map.
+ *
+ * @returns {Promise<void>}
+ */
 async function connectAndAnnounceTools() {
   await ensureMcpConnected();
-  // Construye catálogo con los 3 servers y anuncia
+  
   const catalog = await buildToolCatalog([
     { label: 'filesystem', client: fsClient, sanitizer: 'fs' },
     { label: 'git',        client: gitClient, sanitizer: 'git' },
@@ -143,6 +222,12 @@ async function connectAndAnnounceTools() {
   console.log('\nMCP conectado (FS + Git + Food + Dad Jokes + Wf + trainer).\n');
 }
 
+/**
+ * Demonstrates filesystem + git MCP integration by creating a repository with README and initial commit.
+ *
+ * @param {string} repoName - Repository name
+ * @returns {Promise<void>}
+ */
 async function runGitDemo(repoName) {
   if (!repoName) {
     console.log('Uso: /demo:git <nombre-repo>\n');
@@ -154,31 +239,24 @@ async function runGitDemo(repoName) {
 
   logMessage('mcp', `DEMO: crear repo en ${repoPath}`);
 
-  // Crear carpeta del repo (Filesystem MCP)
   await fs_createDirectory(fsClient, repoPath);
 
-  // Crear README.md
   const readmePath = resolve(repoPath, 'README.md');
   const readme = `# ${repoName}\n\nRepositorio creado por MCP demo.\n`;
   await fs_writeFile(fsClient, readmePath, readme);
 
-  // Inicializar repo (Git MCP)
   await git_init(gitClient, repoPath);
 
-  // git add README.md
   await git_add(gitClient, repoPath, [readmePath]);
 
-  // git commit
   const commitMsg = 'chore: initial commit with README';
   const commitRes = await git_commit(gitClient, repoPath, commitMsg);
 
-  // Lee el último commit para mostrar autor + hash
   const logRes = await git_log(gitClient, repoPath, 1);
   const logText = toText(logRes);
   const author = extractAuthor(logText);
   const hash = extractHash(logText);
 
-  // Status final 
   const status = await git_status(gitClient, repoPath);
 
   console.log('\n--- REPOSITORIO CREADO  ---');
@@ -190,6 +268,12 @@ async function runGitDemo(repoName) {
   logMessage('mcp', `Commit realizado en ${repoPath}: ${JSON.stringify(commitRes)}`);
 }
 
+/**
+ * Main interactive REPL loop.
+ * Handles user input, executes special commands, and manages chat with Anthropic.
+ *
+ * @returns {Promise<void>}
+ */
 async function askLoop() {
   while (true) {
     const userPrompt = await rl.question('Escribe tu pregunta: ');
